@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>MP4 to AVIF</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        accent: '#e76f51',
+                        beat: '#2a9d8f',
+                        dark: { 900: '#0f0f0f', 800: '#1a1a1a', 700: '#2a2a2a', 600: '#3a3a3a' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { margin: 0; min-height: 100vh; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-white transition-colors duration-200">
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <div class="w-full max-w-md mx-auto pt-4 px-4 flex items-center gap-2">
+            <div class="flex-1 flex gap-1 p-1 bg-gray-200 dark:bg-dark-800 rounded-lg">
+                <button
+                    v-for="tab in tabs"
+                    :key="tab.id"
+                    @click="mode = tab.id"
+                    class="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-200"
+                    :class="mode === tab.id ? 'bg-beat text-white' : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300'"
+                >{{ tab.label }}</button>
+            </div>
+            <button
+                @click="toggleTheme"
+                class="p-2 rounded-lg bg-gray-200 dark:bg-dark-700 hover:bg-gray-300 dark:hover:bg-dark-600 transition-colors shrink-0"
+            >
+                <svg v-if="theme === 'dark'" class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd" />
+                </svg>
+                <svg v-else class="w-5 h-5 text-gray-700" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- Main -->
+        <main class="flex-1 flex flex-col items-center justify-center px-4 py-4">
+            <div class="w-full max-w-md mx-auto">
+                <p class="text-center text-sm text-gray-500 dark:text-gray-400 mb-6">{{ currentTab.description }}</p>
+
+                <!-- File Input -->
+                <div class="flex flex-col gap-3 mb-4">
+                    <file-input
+                        :label="currentTab.inputLabel"
+                        :hint="currentTab.inputHint"
+                        :accept="currentTab.accept"
+                        :file="file"
+                        @update="file = $event"
+                    />
+                </div>
+
+                <!-- Quality Slider -->
+                <div class="mb-4">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Quality</label>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ quality }}</span>
+                    </div>
+                    <input type="range" min="1" max="63" v-model.number="quality"
+                        class="w-full h-2 bg-gray-200 dark:bg-dark-700 rounded-lg appearance-none cursor-pointer accent-beat">
+                    <div class="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        <span>Best quality</span>
+                        <span>Smallest file</span>
+                    </div>
+                </div>
+
+                <!-- FPS (video to animated AVIF) -->
+                <div v-if="mode === 'animated'" class="mb-4">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Output FPS</label>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ fps }}</span>
+                    </div>
+                    <input type="range" min="1" max="30" v-model.number="fps"
+                        class="w-full h-2 bg-gray-200 dark:bg-dark-700 rounded-lg appearance-none cursor-pointer accent-beat">
+                    <div class="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        <span>1 fps</span>
+                        <span>30 fps</span>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button
+                    @click="process"
+                    :disabled="!file || processing"
+                    class="w-full py-3 px-6 rounded-xl font-bold text-lg transition-all duration-200 touch-manipulation shadow-lg"
+                    :class="file && !processing
+                        ? 'bg-beat hover:bg-teal-600 active:bg-teal-700 text-white'
+                        : 'bg-gray-200 dark:bg-dark-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'"
+                >
+                    <span v-if="processing" class="flex items-center justify-center gap-2">
+                        <svg class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {{ statusMessage }}
+                    </span>
+                    <span v-else>{{ currentTab.buttonLabel }}</span>
+                </button>
+
+                <!-- Progress Bar -->
+                <div v-if="processing && progress > 0" class="mt-3">
+                    <div class="w-full bg-gray-200 dark:bg-dark-700 rounded-full h-2">
+                        <div class="bg-beat h-2 rounded-full transition-all duration-300" :style="{ width: progress + '%' }"></div>
+                    </div>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 text-center mt-1">{{ Math.round(progress) }}%</p>
+                </div>
+
+                <!-- Status -->
+                <div v-if="statusMessage && !processing" class="mt-4 rounded-xl p-3 text-sm"
+                     :class="statusType === 'error' ? 'bg-accent/20 text-accent' : 'bg-beat/20 text-beat'">
+                    {{ statusMessage }}
+                </div>
+
+                <!-- Preview -->
+                <div v-if="previewUrl" class="mt-4 rounded-xl overflow-hidden border border-gray-200 dark:border-dark-700">
+                    <img :src="previewUrl" alt="AVIF preview" class="w-full">
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="py-2 text-center text-gray-500 dark:text-gray-600 text-sm">
+            Built with love by Martin – <a href="https://github.com/tintamarre/mp4-to-avif" target="_blank" class="hover:text-gray-700 dark:hover:text-gray-400 transition-colors">Source code</a>
+        </footer>
+    </div>
+
+    <!-- File Input Component -->
+    <template id="file-input-template">
+        <div
+            @drop.prevent="onDrop"
+            @dragover.prevent="dragging = true"
+            @dragleave="dragging = false"
+            @click="$refs.input.click()"
+            class="p-4 rounded-xl border-2 border-dashed transition-colors duration-200 cursor-pointer"
+            :class="[
+                file ? 'border-beat bg-beat/10' : 'border-gray-300 dark:border-dark-700 hover:border-gray-400 dark:hover:border-dark-600',
+                dragging ? 'border-beat bg-beat/10' : ''
+            ]"
+        >
+            <input ref="input" type="file" :accept="accept" @change="onSelect" class="hidden">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center" :class="file ? 'bg-beat/20' : 'bg-gray-200 dark:bg-dark-700'">
+                    <svg v-if="!file" class="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    <svg v-else class="w-5 h-5 text-beat" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ label }}</p>
+                    <p class="text-xs text-gray-500 truncate">{{ file ? file.name : hint }}</p>
+                </div>
+                <button v-if="file" @click.stop="$emit('update', null)" class="text-gray-400 dark:text-gray-500 hover:text-accent transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <script type="module">
+        import { FFmpeg } from 'https://esm.sh/@ffmpeg/ffmpeg@0.12.15';
+        import { fetchFile, toBlobURL } from 'https://esm.sh/@ffmpeg/util@0.12.2';
+
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        // File Input Component
+        const FileInput = {
+            template: '#file-input-template',
+            props: ['label', 'hint', 'accept', 'file'],
+            emits: ['update'],
+            setup(props, { emit }) {
+                const dragging = ref(false);
+                const onSelect = (e) => {
+                    const file = e.target.files[0];
+                    if (file) emit('update', file);
+                };
+                const onDrop = (e) => {
+                    dragging.value = false;
+                    const file = e.dataTransfer.files[0];
+                    if (file) emit('update', file);
+                };
+                return { dragging, onSelect, onDrop };
+            }
+        };
+
+        // Main App
+        createApp({
+            components: { FileInput },
+            setup() {
+                const mode = ref('still');
+                const file = ref(null);
+                const processing = ref(false);
+                const statusMessage = ref('');
+                const statusType = ref('');
+                const progress = ref(0);
+                const previewUrl = ref(null);
+                const quality = ref(30);
+                const fps = ref(10);
+                const theme = ref(localStorage.getItem('theme') || 'light');
+                const ffmpegLoaded = ref(false);
+                const ffmpeg = new FFmpeg();
+
+                const tabs = [
+                    {
+                        id: 'still',
+                        label: 'Still Frame',
+                        description: 'Extract a single frame from an MP4 video and save it as AVIF.',
+                        buttonLabel: 'Convert to AVIF',
+                        inputLabel: 'MP4 Video',
+                        inputHint: 'Click or drag MP4 file',
+                        accept: 'video/mp4,video/*'
+                    },
+                    {
+                        id: 'animated',
+                        label: 'Animated AVIF',
+                        description: 'Convert an MP4 video to an animated AVIF image.',
+                        buttonLabel: 'Convert to Animated AVIF',
+                        inputLabel: 'MP4 Video',
+                        inputHint: 'Click or drag MP4 file',
+                        accept: 'video/mp4,video/*'
+                    }
+                ];
+
+                const currentTab = computed(() => tabs.find(t => t.id === mode.value));
+
+                const applyTheme = (t) => document.documentElement.classList.toggle('dark', t === 'dark');
+                const toggleTheme = () => {
+                    theme.value = theme.value === 'dark' ? 'light' : 'dark';
+                    localStorage.setItem('theme', theme.value);
+                    applyTheme(theme.value);
+                };
+                applyTheme(theme.value);
+
+                const setStatus = (msg, type = 'success') => { statusMessage.value = msg; statusType.value = type; };
+
+                async function loadFFmpeg() {
+                    if (ffmpegLoaded.value) return;
+                    statusMessage.value = 'Loading FFmpeg (~30MB)...';
+                    processing.value = true;
+
+                    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+                    ffmpeg.on('progress', ({ progress: p }) => {
+                        progress.value = Math.round(p * 100);
+                    });
+                    ffmpeg.on('log', ({ message }) => {
+                        console.log('[ffmpeg]', message);
+                    });
+
+                    await ffmpeg.load({
+                        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    });
+
+                    ffmpegLoaded.value = true;
+                    processing.value = false;
+                    statusMessage.value = '';
+                }
+
+                function slugify(text) {
+                    return text.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/-+/g, '-');
+                }
+
+                function baseName(filename) {
+                    return filename.replace(/\.[^/.]+$/, '');
+                }
+
+                function download(blob, filename) {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                }
+
+                async function process() {
+                    if (!file.value || processing.value) return;
+                    previewUrl.value = null;
+                    progress.value = 0;
+
+                    try {
+                        await loadFFmpeg();
+
+                        processing.value = true;
+                        statusMessage.value = 'Reading file...';
+
+                        const inputName = 'input.mp4';
+                        const outputName = 'output.avif';
+
+                        await ffmpeg.writeFile(inputName, await fetchFile(file.value));
+
+                        if (mode.value === 'still') {
+                            statusMessage.value = 'Extracting frame...';
+                            await ffmpeg.exec([
+                                '-i', inputName,
+                                '-vframes', '1',
+                                '-c:v', 'libaom-av1',
+                                '-crf', String(quality.value),
+                                '-still-picture', '1',
+                                outputName
+                            ]);
+                        } else {
+                            statusMessage.value = 'Converting to animated AVIF...';
+                            await ffmpeg.exec([
+                                '-i', inputName,
+                                '-c:v', 'libaom-av1',
+                                '-crf', String(quality.value),
+                                '-r', String(fps.value),
+                                '-cpu-used', '4',
+                                '-row-mt', '1',
+                                outputName
+                            ]);
+                        }
+
+                        statusMessage.value = 'Reading output...';
+                        const data = await ffmpeg.readFile(outputName);
+                        const blob = new Blob([data], { type: 'image/avif' });
+                        const sizeKB = Math.round(blob.size / 1024);
+
+                        const outFilename = slugify(baseName(file.value.name)) + '.avif';
+                        download(blob, outFilename);
+
+                        previewUrl.value = URL.createObjectURL(blob);
+                        setStatus(`Downloaded "${outFilename}" (${sizeKB} KB)`);
+
+                        // Cleanup
+                        await ffmpeg.deleteFile(inputName);
+                        await ffmpeg.deleteFile(outputName);
+                    } catch (err) {
+                        setStatus(`Error: ${err.message}`, 'error');
+                        console.error(err);
+                    } finally {
+                        processing.value = false;
+                        progress.value = 0;
+                    }
+                }
+
+                return {
+                    mode, file, processing, statusMessage, statusType, progress,
+                    previewUrl, quality, fps, theme,
+                    tabs, currentTab,
+                    toggleTheme, process
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
