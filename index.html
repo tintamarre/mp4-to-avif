@@ -249,12 +249,23 @@
             });
         }
 
-        function canvasToAvifBlob(canvas, quality) {
+        function canvasToBlob(canvas, quality) {
             return new Promise((resolve, reject) => {
                 canvas.toBlob(
                     (blob) => {
-                        if (blob) resolve(blob);
-                        else reject(new Error('AVIF encoding failed'));
+                        if (blob && blob.type === 'image/avif') {
+                            resolve({ blob, format: 'avif' });
+                        } else {
+                            // Fallback to WebP
+                            canvas.toBlob(
+                                (webpBlob) => {
+                                    if (webpBlob) resolve({ blob: webpBlob, format: 'webp' });
+                                    else reject(new Error('Image encoding failed'));
+                                },
+                                'image/webp',
+                                quality
+                            );
+                        }
                     },
                     'image/avif',
                     quality
@@ -267,8 +278,14 @@
                 const canvas = document.createElement('canvas');
                 canvas.width = 1;
                 canvas.height = 1;
+                canvas.getContext('2d').fillRect(0, 0, 1, 1);
                 canvas.toBlob(
-                    (blob) => resolve(blob !== null && blob.type === 'image/avif'),
+                    (blob) => {
+                        // Some browsers silently fall back to PNG instead of returning null
+                        const supported = blob !== null && blob.type === 'image/avif';
+                        console.log('[app] AVIF check: blob type =', blob?.type, 'supported =', supported);
+                        resolve(supported);
+                    },
                     'image/avif',
                     0.5
                 );
