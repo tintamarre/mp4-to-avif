@@ -60,7 +60,7 @@
 
                 <!-- AVIF support warning -->
                 <div v-if="!avifSupported" class="mb-4 rounded-xl p-3 text-sm bg-accent/20 text-accent">
-                    Your browser does not support AVIF encoding. Please use Chrome or Edge.
+                    Your browser does not support AVIF encoding natively. Output will use WebP instead.
                 </div>
 
                 <!-- File Input -->
@@ -115,9 +115,9 @@
                 <!-- Action Button -->
                 <button
                     @click="process"
-                    :disabled="!file || processing || !avifSupported"
+                    :disabled="!file || processing"
                     class="w-full py-3 px-6 rounded-xl font-bold text-lg transition-all duration-200 touch-manipulation shadow-lg"
-                    :class="file && !processing && avifSupported
+                    :class="file && !processing
                         ? 'bg-beat hover:bg-teal-600 active:bg-teal-700 text-white'
                         : 'bg-gray-200 dark:bg-dark-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'"
                 >
