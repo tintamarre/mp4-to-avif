@@ -189,11 +189,25 @@
         </div>
     </template>
 
-    <script type="module">
-        import { FFmpeg } from 'https://esm.sh/@ffmpeg/ffmpeg@0.12.15?bundle-deps';
-        import { fetchFile, toBlobURL } from 'https://esm.sh/@ffmpeg/util@0.12.2?bundle-deps';
-
+    <script>
         const { createApp, ref, computed } = Vue;
+
+        // FFmpeg lazy loader — imports only when needed, not at page load
+        let _ffmpegModule = null;
+        let _utilModule = null;
+        async function getFFmpegModules() {
+            if (!_ffmpegModule) {
+                console.log('[app] Loading FFmpeg modules from CDN...');
+                const [ffmpegMod, utilMod] = await Promise.all([
+                    import('https://esm.sh/@ffmpeg/ffmpeg@0.12.15'),
+                    import('https://esm.sh/@ffmpeg/util@0.12.2'),
+                ]);
+                _ffmpegModule = ffmpegMod;
+                _utilModule = utilMod;
+                console.log('[app] FFmpeg modules loaded');
+            }
+            return { FFmpeg: _ffmpegModule.FFmpeg, fetchFile: _utilModule.fetchFile, toBlobURL: _utilModule.toBlobURL };
+        }
 
         // File Input Component
         const FileInput = {
@@ -230,8 +244,7 @@
                 const fps = ref(10);
                 const timestamp = ref(0);
                 const theme = ref(localStorage.getItem('theme') || 'light');
-                const ffmpegLoaded = ref(false);
-                const ffmpeg = new FFmpeg();
+                let ffmpeg = null;
 
                 const tabs = [
                     {
@@ -267,11 +280,14 @@
                 const setStatus = (msg, type = 'success') => { statusMessage.value = msg; statusType.value = type; };
 
                 async function loadFFmpeg() {
-                    if (ffmpegLoaded.value) return;
-                    statusMessage.value = 'Loading FFmpeg (~30MB)...';
-                    processing.value = true;
+                    if (ffmpeg) return;
 
-                    const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+                    statusMessage.value = 'Loading FFmpeg modules...';
+                    const { FFmpeg, toBlobURL } = await getFFmpegModules();
+
+                    statusMessage.value = 'Loading FFmpeg core (~30MB)...';
+                    ffmpeg = new FFmpeg();
+
                     ffmpeg.on('progress', ({ progress: p }) => {
                         progress.value = Math.round(p * 100);
                     });
@@ -279,20 +295,14 @@
                         console.log('[ffmpeg]', message);
                     });
 
-                    const classWorkerURL = await toBlobURL(
-                        'https://esm.sh/@ffmpeg/ffmpeg@0.12.15/dist/esm/worker.js',
-                        'text/javascript'
-                    );
+                    const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
 
                     await ffmpeg.load({
                         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                        classWorkerURL,
                     });
 
-                    ffmpegLoaded.value = true;
-                    processing.value = false;
-                    statusMessage.value = '';
+                    console.log('[app] FFmpeg core loaded and ready');
                 }
 
                 function slugify(text) {
@@ -312,6 +322,7 @@
                 }
 
                 async function convertStillFrame() {
+                    const { fetchFile } = await getFFmpegModules();
                     statusMessage.value = 'Extracting frame...';
 
                     const inputName = 'input.mp4';
@@ -336,6 +347,7 @@
                 }
 
                 async function convertAnimated() {
+                    const { fetchFile } = await getFFmpegModules();
                     statusMessage.value = 'Converting to animated AVIF (this may take a while)...';
 
                     const inputName = 'input.mp4';
@@ -366,9 +378,9 @@
                     progress.value = 0;
 
                     try {
+                        processing.value = true;
                         await loadFFmpeg();
 
-                        processing.value = true;
                         statusMessage.value = 'Reading file...';
 
                         const blob = mode.value === 'still'
@@ -383,12 +395,14 @@
                         setStatus(`Downloaded "${outFilename}" (${sizeKB} KB)`);
                     } catch (err) {
                         setStatus(`Error: ${err.message}`, 'error');
-                        console.error(err);
+                        console.error('[app] Error:', err);
                     } finally {
                         processing.value = false;
                         progress.value = 0;
                     }
                 }
+
+                console.log('[app] Vue app mounted');
 
                 return {
                     mode, file, processing, statusMessage, statusType, progress,
