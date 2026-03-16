@@ -414,28 +414,28 @@
                         const base = slugify(baseName(file.value.name));
 
                         if (mode.value === 'still') {
-                            const blob = await convertStillFrame();
+                            const { blob, format } = await convertStillFrame();
                             const sizeKB = Math.round(blob.size / 1024);
-                            const outFilename = base + '.avif';
+                            const outFilename = base + '.' + format;
 
                             download(blob, outFilename);
                             previewUrl.value = URL.createObjectURL(blob);
-                            setStatus(`Downloaded "${outFilename}" (${sizeKB} KB)`);
+                            setStatus(`Downloaded "${outFilename}" (${sizeKB} KB, ${format})`);
                         } else {
-                            const blobs = await convertSequence();
+                            const results = await convertSequence();
+                            const format = results[0]?.format || 'avif';
 
-                            for (let i = 0; i < blobs.length; i++) {
-                                const { blob, time } = blobs[i];
-                                const outFilename = `${base}-${String(i).padStart(4, '0')}.avif`;
-                                download(blob, outFilename);
+                            for (let i = 0; i < results.length; i++) {
+                                const outFilename = `${base}-${String(i).padStart(4, '0')}.${format}`;
+                                download(results[i].blob, outFilename);
                             }
 
                             // Show preview of first frame
-                            if (blobs.length > 0) {
-                                previewUrl.value = URL.createObjectURL(blobs[0].blob);
+                            if (results.length > 0) {
+                                previewUrl.value = URL.createObjectURL(results[0].blob);
                             }
-                            const totalKB = Math.round(blobs.reduce((s, b) => s + b.blob.size, 0) / 1024);
-                            setStatus(`Downloaded ${blobs.length} frames (${totalKB} KB total)`);
+                            const totalKB = Math.round(results.reduce((s, r) => s + r.blob.size, 0) / 1024);
+                            setStatus(`Downloaded ${results.length} frames (${totalKB} KB total, ${format})`);
                         }
                     } catch (err) {
                         setStatus(`Error: ${err.message}`, 'error');
