@@ -190,8 +190,8 @@
     </template>
 
     <script type="module">
-        import { FFmpeg } from 'https://esm.sh/@ffmpeg/ffmpeg@0.12.15';
-        import { fetchFile, toBlobURL } from 'https://esm.sh/@ffmpeg/util@0.12.2';
+        import { FFmpeg } from 'https://esm.sh/@ffmpeg/ffmpeg@0.12.15?bundle-deps';
+        import { fetchFile, toBlobURL } from 'https://esm.sh/@ffmpeg/util@0.12.2?bundle-deps';
 
         const { createApp, ref, computed } = Vue;
 
@@ -279,9 +279,15 @@
                         console.log('[ffmpeg]', message);
                     });
 
+                    const classWorkerURL = await toBlobURL(
+                        'https://esm.sh/@ffmpeg/ffmpeg@0.12.15/dist/esm/worker.js',
+                        'text/javascript'
+                    );
+
                     await ffmpeg.load({
                         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        classWorkerURL,
                     });
 
                     ffmpegLoaded.value = true;
