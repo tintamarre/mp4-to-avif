@@ -370,9 +370,8 @@
                     const canvas = await extractFrame(videoUrl, timestamp.value);
                     console.log('[app] Frame extracted:', canvas.width, 'x', canvas.height);
 
-                    statusMessage.value = 'Encoding to AVIF...';
-                    const blob = await canvasToAvifBlob(canvas, quality.value);
-                    return blob;
+                    statusMessage.value = 'Encoding...';
+                    return await canvasToBlob(canvas, quality.value);
                 }
 
                 async function convertSequence() {
@@ -391,18 +390,18 @@
                         times.push(t);
                     }
 
-                    const blobs = [];
+                    const results = [];
                     for (let i = 0; i < times.length; i++) {
                         statusMessage.value = `Frame ${i + 1}/${times.length}...`;
                         progress.value = ((i + 1) / times.length) * 100;
 
                         const canvas = await extractFrame(videoUrl, times[i]);
-                        const blob = await canvasToAvifBlob(canvas, quality.value);
-                        blobs.push({ blob, time: times[i] });
+                        const result = await canvasToBlob(canvas, quality.value);
+                        results.push({ ...result, time: times[i] });
                     }
 
                     URL.revokeObjectURL(videoUrl);
-                    return blobs;
+                    return results;
                 }
 
                 async function process() {
