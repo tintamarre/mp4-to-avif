@@ -58,6 +58,11 @@
             <div class="w-full max-w-md mx-auto">
                 <p class="text-center text-sm text-gray-500 dark:text-gray-400 mb-6">{{ currentTab.description }}</p>
 
+                <!-- AVIF support warning -->
+                <div v-if="!avifSupported" class="mb-4 rounded-xl p-3 text-sm bg-accent/20 text-accent">
+                    Your browser does not support AVIF encoding. Please use Chrome or Edge.
+                </div>
+
                 <!-- File Input -->
                 <div class="flex flex-col gap-3 mb-4">
                     <file-input
@@ -83,36 +88,36 @@
                 <div class="mb-4">
                     <div class="flex items-center justify-between mb-1">
                         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Quality</label>
-                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ quality }}</span>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ Math.round(quality * 100) }}%</span>
                     </div>
-                    <input type="range" min="1" max="63" v-model.number="quality"
+                    <input type="range" min="0.1" max="1" step="0.05" v-model.number="quality"
                         class="w-full h-2 bg-gray-200 dark:bg-dark-700 rounded-lg appearance-none cursor-pointer accent-beat">
                     <div class="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        <span>Best quality</span>
                         <span>Smallest file</span>
+                        <span>Best quality</span>
                     </div>
                 </div>
 
                 <!-- FPS (video to animated AVIF) -->
-                <div v-if="mode === 'animated'" class="mb-4">
+                <div v-if="mode === 'sequence'" class="mb-4">
                     <div class="flex items-center justify-between mb-1">
-                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Output FPS</label>
-                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ fps }}</span>
+                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Extract every N seconds</label>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ interval }}s</span>
                     </div>
-                    <input type="range" min="1" max="30" v-model.number="fps"
+                    <input type="range" min="0.5" max="5" step="0.5" v-model.number="interval"
                         class="w-full h-2 bg-gray-200 dark:bg-dark-700 rounded-lg appearance-none cursor-pointer accent-beat">
                     <div class="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        <span>1 fps</span>
-                        <span>30 fps</span>
+                        <span>0.5s</span>
+                        <span>5s</span>
                     </div>
                 </div>
 
                 <!-- Action Button -->
                 <button
                     @click="process"
-                    :disabled="!file || processing"
+                    :disabled="!file || processing || !avifSupported"
                     class="w-full py-3 px-6 rounded-xl font-bold text-lg transition-all duration-200 touch-manipulation shadow-lg"
-                    :class="file && !processing
+                    :class="file && !processing && avifSupported
                         ? 'bg-beat hover:bg-teal-600 active:bg-teal-700 text-white'
                         : 'bg-gray-200 dark:bg-dark-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'"
                 >
@@ -190,24 +195,7 @@
     </template>
 
     <script>
-        const { createApp, ref, computed } = Vue;
-
-        // FFmpeg lazy loader — imports only when needed, not at page load
-        let _ffmpegModule = null;
-        let _utilModule = null;
-        async function getFFmpegModules() {
-            if (!_ffmpegModule) {
-                console.log('[app] Loading FFmpeg modules from CDN...');
-                const [ffmpegMod, utilMod] = await Promise.all([
-                    import('https://esm.sh/@ffmpeg/ffmpeg@0.12.15'),
-                    import('https://esm.sh/@ffmpeg/util@0.12.2'),
-                ]);
-                _ffmpegModule = ffmpegMod;
-                _utilModule = utilMod;
-                console.log('[app] FFmpeg modules loaded');
-            }
-            return { FFmpeg: _ffmpegModule.FFmpeg, fetchFile: _utilModule.fetchFile, toBlobURL: _utilModule.toBlobURL };
-        }
+        const { createApp, ref, computed, onMounted } = Vue;
 
         // File Input Component
         const FileInput = {
@@ -229,6 +217,64 @@
             }
         };
 
+        // Video frame extraction using Canvas + Video element (no ffmpeg needed)
+        function extractFrame(videoUrl, timeInSeconds) {
+            return new Promise((resolve, reject) => {
+                const video = document.createElement('video');
+                video.crossOrigin = 'anonymous';
+                video.muted = true;
+                video.preload = 'auto';
+
+                video.onloadedmetadata = () => {
+                    const seekTime = Math.min(timeInSeconds, video.duration);
+                    video.currentTime = seekTime;
+                };
+
+                video.onseeked = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0);
+                    resolve(canvas);
+                    URL.revokeObjectURL(video.src);
+                };
+
+                video.onerror = () => {
+                    reject(new Error('Failed to load video'));
+                    URL.revokeObjectURL(video.src);
+                };
+
+                video.src = videoUrl;
+            });
+        }
+
+        function canvasToAvifBlob(canvas, quality) {
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error('AVIF encoding failed'));
+                    },
+                    'image/avif',
+                    quality
+                );
+            });
+        }
+
+        function checkAvifSupport() {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1;
+                canvas.height = 1;
+                canvas.toBlob(
+                    (blob) => resolve(blob !== null && blob.type === 'image/avif'),
+                    'image/avif',
+                    0.5
+                );
+            });
+        }
+
         // Main App
         createApp({
             components: { FileInput },
@@ -240,30 +286,30 @@
                 const statusType = ref('');
                 const progress = ref(0);
                 const previewUrl = ref(null);
-                const quality = ref(30);
-                const fps = ref(10);
+                const quality = ref(0.7);
+                const interval = ref(1);
                 const timestamp = ref(0);
                 const theme = ref(localStorage.getItem('theme') || 'light');
-                let ffmpeg = null;
+                const avifSupported = ref(true);
 
                 const tabs = [
                     {
                         id: 'still',
                         label: 'Still Frame',
-                        description: 'Extract a frame from an MP4 video and save it as AVIF.',
+                        description: 'Extract a frame from a video and save it as AVIF.',
                         buttonLabel: 'Convert to AVIF',
-                        inputLabel: 'MP4 Video',
-                        inputHint: 'Click or drag MP4 file',
-                        accept: 'video/mp4,video/*'
+                        inputLabel: 'Video file',
+                        inputHint: 'Click or drag a video file',
+                        accept: 'video/*'
                     },
                     {
-                        id: 'animated',
-                        label: 'Animated AVIF',
-                        description: 'Convert an MP4 video to an animated AVIF image.',
-                        buttonLabel: 'Convert to Animated AVIF',
-                        inputLabel: 'MP4 Video',
-                        inputHint: 'Click or drag MP4 file',
-                        accept: 'video/mp4,video/*'
+                        id: 'sequence',
+                        label: 'Frame Sequence',
+                        description: 'Extract multiple frames from a video as individual AVIF images.',
+                        buttonLabel: 'Extract Frames as AVIF',
+                        inputLabel: 'Video file',
+                        inputHint: 'Click or drag a video file',
+                        accept: 'video/*'
                     }
                 ];
 
@@ -277,41 +323,12 @@
                 };
                 applyTheme(theme.value);
 
+                onMounted(async () => {
+                    avifSupported.value = await checkAvifSupport();
+                    console.log('[app] AVIF encoding supported:', avifSupported.value);
+                });
+
                 const setStatus = (msg, type = 'success') => { statusMessage.value = msg; statusType.value = type; };
-
-                async function loadFFmpeg() {
-                    if (ffmpeg) return;
-
-                    statusMessage.value = 'Loading FFmpeg modules...';
-                    const { FFmpeg, toBlobURL } = await getFFmpegModules();
-
-                    statusMessage.value = 'Loading FFmpeg core (~30MB)...';
-                    ffmpeg = new FFmpeg();
-
-                    ffmpeg.on('progress', ({ progress: p }) => {
-                        progress.value = Math.round(p * 100);
-                    });
-                    ffmpeg.on('log', ({ message }) => {
-                        console.log('[ffmpeg]', message);
-                    });
-
-                    const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
-
-                    // Fetch the worker script and convert to a same-origin blob URL
-                    // to avoid cross-origin worker loading restrictions
-                    const workerURL = await toBlobURL(
-                        'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/worker.js',
-                        'text/javascript'
-                    );
-
-                    await ffmpeg.load({
-                        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                        classWorkerURL: workerURL,
-                    });
-
-                    console.log('[app] FFmpeg core loaded and ready');
-                }
 
                 function slugify(text) {
                     return text.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/-+/g, '-');
@@ -330,54 +347,45 @@
                 }
 
                 async function convertStillFrame() {
-                    const { fetchFile } = await getFFmpegModules();
                     statusMessage.value = 'Extracting frame...';
+                    const videoUrl = URL.createObjectURL(file.value);
 
-                    const inputName = 'input.mp4';
-                    const outputName = 'output.avif';
+                    const canvas = await extractFrame(videoUrl, timestamp.value);
+                    console.log('[app] Frame extracted:', canvas.width, 'x', canvas.height);
 
-                    await ffmpeg.writeFile(inputName, await fetchFile(file.value));
-
-                    await ffmpeg.exec([
-                        '-ss', String(timestamp.value),
-                        '-i', inputName,
-                        '-vframes', '1',
-                        '-c:v', 'libaom-av1',
-                        '-crf', String(quality.value),
-                        '-still-picture', '1',
-                        outputName
-                    ]);
-
-                    const data = await ffmpeg.readFile(outputName);
-                    await ffmpeg.deleteFile(inputName);
-                    await ffmpeg.deleteFile(outputName);
-                    return new Blob([data], { type: 'image/avif' });
+                    statusMessage.value = 'Encoding to AVIF...';
+                    const blob = await canvasToAvifBlob(canvas, quality.value);
+                    return blob;
                 }
 
-                async function convertAnimated() {
-                    const { fetchFile } = await getFFmpegModules();
-                    statusMessage.value = 'Converting to animated AVIF (this may take a while)...';
+                async function convertSequence() {
+                    const videoUrl = URL.createObjectURL(file.value);
 
-                    const inputName = 'input.mp4';
-                    const outputName = 'output.avif';
+                    // Get video duration
+                    const video = document.createElement('video');
+                    video.preload = 'metadata';
+                    video.src = videoUrl;
+                    await new Promise((resolve) => { video.onloadedmetadata = resolve; });
+                    const duration = video.duration;
+                    video.remove();
 
-                    await ffmpeg.writeFile(inputName, await fetchFile(file.value));
+                    const times = [];
+                    for (let t = 0; t < duration; t += interval.value) {
+                        times.push(t);
+                    }
 
-                    await ffmpeg.exec([
-                        '-i', inputName,
-                        '-c:v', 'libaom-av1',
-                        '-crf', String(quality.value),
-                        '-r', String(fps.value),
-                        '-cpu-used', '8',
-                        '-row-mt', '1',
-                        '-tiles', '2x2',
-                        outputName
-                    ]);
+                    const blobs = [];
+                    for (let i = 0; i < times.length; i++) {
+                        statusMessage.value = `Frame ${i + 1}/${times.length}...`;
+                        progress.value = ((i + 1) / times.length) * 100;
 
-                    const data = await ffmpeg.readFile(outputName);
-                    await ffmpeg.deleteFile(inputName);
-                    await ffmpeg.deleteFile(outputName);
-                    return new Blob([data], { type: 'image/avif' });
+                        const canvas = await extractFrame(videoUrl, times[i]);
+                        const blob = await canvasToAvifBlob(canvas, quality.value);
+                        blobs.push({ blob, time: times[i] });
+                    }
+
+                    URL.revokeObjectURL(videoUrl);
+                    return blobs;
                 }
 
                 async function process() {
@@ -387,20 +395,32 @@
 
                     try {
                         processing.value = true;
-                        await loadFFmpeg();
+                        const base = slugify(baseName(file.value.name));
 
-                        statusMessage.value = 'Reading file...';
+                        if (mode.value === 'still') {
+                            const blob = await convertStillFrame();
+                            const sizeKB = Math.round(blob.size / 1024);
+                            const outFilename = base + '.avif';
 
-                        const blob = mode.value === 'still'
-                            ? await convertStillFrame()
-                            : await convertAnimated();
+                            download(blob, outFilename);
+                            previewUrl.value = URL.createObjectURL(blob);
+                            setStatus(`Downloaded "${outFilename}" (${sizeKB} KB)`);
+                        } else {
+                            const blobs = await convertSequence();
 
-                        const sizeKB = Math.round(blob.size / 1024);
-                        const outFilename = slugify(baseName(file.value.name)) + '.avif';
+                            for (let i = 0; i < blobs.length; i++) {
+                                const { blob, time } = blobs[i];
+                                const outFilename = `${base}-${String(i).padStart(4, '0')}.avif`;
+                                download(blob, outFilename);
+                            }
 
-                        download(blob, outFilename);
-                        previewUrl.value = URL.createObjectURL(blob);
-                        setStatus(`Downloaded "${outFilename}" (${sizeKB} KB)`);
+                            // Show preview of first frame
+                            if (blobs.length > 0) {
+                                previewUrl.value = URL.createObjectURL(blobs[0].blob);
+                            }
+                            const totalKB = Math.round(blobs.reduce((s, b) => s + b.blob.size, 0) / 1024);
+                            setStatus(`Downloaded ${blobs.length} frames (${totalKB} KB total)`);
+                        }
                     } catch (err) {
                         setStatus(`Error: ${err.message}`, 'error');
                         console.error('[app] Error:', err);
@@ -414,7 +434,7 @@
 
                 return {
                     mode, file, processing, statusMessage, statusType, progress,
-                    previewUrl, quality, fps, timestamp, theme,
+                    previewUrl, quality, interval, timestamp, theme, avifSupported,
                     tabs, currentTab,
                     toggleTheme, process
                 };
