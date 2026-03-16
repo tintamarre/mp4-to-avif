@@ -297,9 +297,17 @@
 
                     const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
 
+                    // Fetch the worker script and convert to a same-origin blob URL
+                    // to avoid cross-origin worker loading restrictions
+                    const workerURL = await toBlobURL(
+                        'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/worker.js',
+                        'text/javascript'
+                    );
+
                     await ffmpeg.load({
                         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        classWorkerURL: workerURL,
                     });
 
                     console.log('[app] FFmpeg core loaded and ready');
